@@ -131,7 +131,6 @@ impl AgentSoundOverrides {
             Some(Agent::Antigravity) => self.agy,
             Some(Agent::Cline) => self.cline,
             Some(Agent::Omp) => AgentSoundSetting::Default,
-            Some(Agent::Jcode) => AgentSoundSetting::Default,
             Some(Agent::Mastracode) => AgentSoundSetting::Default,
             Some(Agent::OpenCode) => self.open_code,
             Some(Agent::GithubCopilot) => self.github_copilot,
@@ -198,7 +197,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::config::{Config, config_path};
+    use crate::config::{config_path, Config};
 
     #[test]
     fn sound_table_config_parses() {

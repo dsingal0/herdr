@@ -10,7 +10,6 @@ pub(crate) fn integration_target_label(
     match target {
         crate::api::schema::IntegrationTarget::Pi => "pi",
         crate::api::schema::IntegrationTarget::Omp => "omp",
-        crate::api::schema::IntegrationTarget::Jcode => "jcode",
         crate::api::schema::IntegrationTarget::Claude => "claude",
         crate::api::schema::IntegrationTarget::Codex => "codex",
         crate::api::schema::IntegrationTarget::Copilot => "copilot",
@@ -41,7 +40,6 @@ pub(crate) fn integration_target_command_names(
     match target {
         crate::api::schema::IntegrationTarget::Pi => &["pi"],
         crate::api::schema::IntegrationTarget::Omp => &["omp"],
-        crate::api::schema::IntegrationTarget::Jcode => &["jcode"],
         crate::api::schema::IntegrationTarget::Claude => &["claude"],
         crate::api::schema::IntegrationTarget::Codex => &["codex"],
         crate::api::schema::IntegrationTarget::Copilot => &["copilot"],
@@ -71,7 +69,6 @@ pub(crate) fn integration_target_supported(target: crate::api::schema::Integrati
             target,
             crate::api::schema::IntegrationTarget::Pi
                 | crate::api::schema::IntegrationTarget::Omp
-                | crate::api::schema::IntegrationTarget::Jcode
                 | crate::api::schema::IntegrationTarget::Claude
                 | crate::api::schema::IntegrationTarget::Codex
                 | crate::api::schema::IntegrationTarget::Copilot
@@ -197,7 +194,11 @@ pub(crate) fn codex_standalone_binary_available() -> bool {
 }
 
 pub(crate) fn codex_executable_name() -> &'static str {
-    if cfg!(windows) { "codex.exe" } else { "codex" }
+    if cfg!(windows) {
+        "codex.exe"
+    } else {
+        "codex"
+    }
 }
 
 pub(crate) fn hermes_install_layout_available() -> bool {
@@ -266,7 +267,7 @@ fn integration_specs() -> [(
     crate::api::schema::IntegrationTarget,
     io::Result<PathBuf>,
     u32,
-); 18] {
+); 17] {
     [
         (
             crate::api::schema::IntegrationTarget::Pi,
@@ -277,11 +278,6 @@ fn integration_specs() -> [(
             crate::api::schema::IntegrationTarget::Omp,
             omp_extension_dir().map(|dir| dir.join(super::OMP_EXTENSION_INSTALL_NAME)),
             super::OMP_INTEGRATION_VERSION,
-        ),
-        (
-            crate::api::schema::IntegrationTarget::Jcode,
-            jcode_dir().map(|dir| dir.join(super::JCODE_MARKER_INSTALL_NAME)),
-            super::JCODE_INTEGRATION_VERSION,
         ),
         (
             crate::api::schema::IntegrationTarget::Claude,
@@ -472,16 +468,6 @@ pub(crate) fn integration_status_at(
 ) -> super::IntegrationStatus {
     let (mut state, installed_version) = integration_state_for_path(&path, expected_version);
 
-    if target == crate::api::schema::IntegrationTarget::Jcode && path.is_file() {
-        let marker = fs::read_to_string(&path)
-            .ok()
-            .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok());
-        if !marker.as_ref().is_some_and(|marker| {
-            marker["HERDR_INTEGRATION_ID"] == "jcode" && marker["enabled"] == true
-        }) {
-            state = super::IntegrationStatusKind::Outdated;
-        }
-    }
     // Grok only invokes the hook when the herdr-owned `hooks/herdr.json`
     // registers it, so a current hook script with a missing or broken config
     // is a nonfunctional install: report it as outdated so `herdr integration
@@ -530,13 +516,6 @@ pub(crate) fn experimental_letta_integration_status() -> Option<super::Experimen
 }
 
 pub(crate) fn parse_integration_version(content: &str) -> Option<u32> {
-    if let Ok(marker) = serde_json::from_str::<serde_json::Value>(content) {
-        return marker
-            .get("HERDR_INTEGRATION_VERSION")?
-            .as_u64()?
-            .try_into()
-            .ok();
-    }
     content.lines().find_map(|line| {
         let marker_line = line
             .trim()

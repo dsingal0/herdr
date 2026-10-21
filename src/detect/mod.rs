@@ -50,7 +50,6 @@ pub enum Agent {
     Antigravity,
     Cline,
     Omp,
-    Jcode,
     Mastracode,
     OpenCode,
     GithubCopilot,
@@ -69,7 +68,7 @@ pub enum Agent {
 }
 
 impl Agent {
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 24] = [
         Self::Pi,
         Self::Claude,
         Self::Codex,
@@ -79,7 +78,6 @@ impl Agent {
         Self::Antigravity,
         Self::Cline,
         Self::Omp,
-        Self::Jcode,
         Self::Mastracode,
         Self::OpenCode,
         Self::GithubCopilot,
@@ -97,7 +95,7 @@ impl Agent {
         Self::Muse,
     ];
 
-    pub const SCREEN_MANIFEST_AGENTS: [Self; 23] = [
+    pub const SCREEN_MANIFEST_AGENTS: [Self; 22] = [
         Self::Pi,
         Self::Claude,
         Self::Codex,
@@ -106,7 +104,6 @@ impl Agent {
         Self::Devin,
         Self::Antigravity,
         Self::Cline,
-        Self::Jcode,
         Self::OpenCode,
         Self::GithubCopilot,
         Self::Kimi,
@@ -135,7 +132,6 @@ pub fn agent_label(agent: Agent) -> &'static str {
         Agent::Antigravity => "agy",
         Agent::Cline => "cline",
         Agent::Omp => "omp",
-        Agent::Jcode => "jcode",
         Agent::Mastracode => "mastracode",
         Agent::OpenCode => "opencode",
         Agent::GithubCopilot => "copilot",
@@ -171,7 +167,6 @@ pub fn interactive_agent_executable(agent: Agent) -> &'static str {
         Agent::Antigravity => "agy",
         Agent::Cline => "cline",
         Agent::Omp => "omp",
-        Agent::Jcode => "jcode",
         Agent::Mastracode => "mastracode",
         Agent::OpenCode => "opencode",
         Agent::GithubCopilot => "copilot",
@@ -212,7 +207,6 @@ fn lookup_agent(name: &str) -> Option<Agent> {
         "agy" | "antigravity" | "antigravity-cli" => Some(Agent::Antigravity),
         "cline" | ".cline" => Some(Agent::Cline),
         "omp" => Some(Agent::Omp),
-        "jcode" => Some(Agent::Jcode),
         "mastracode" | "mastra-code" | "mastra code" => Some(Agent::Mastracode),
         "opencode" | "opencode2" | "open-code" => Some(Agent::OpenCode),
         "copilot" | "github-copilot" | "ghcs" => Some(Agent::GithubCopilot),
@@ -267,9 +261,7 @@ pub fn identify_agent_process_in_job(
     {
         let candidate = normalized_process_name(process);
         if let Some(agent) = identify_agent(&candidate) {
-            if (agent != Agent::Letta || is_interactive_letta_process(process))
-                && (agent != Agent::Jcode || is_interactive_jcode_process(process))
-            {
+            if agent != Agent::Letta || is_interactive_letta_process(process) {
                 return Some((agent, candidate, process.pid));
             }
         }
@@ -283,9 +275,6 @@ pub fn identify_agent_process_in_job(
             continue;
         };
         if agent == Agent::Letta && !is_interactive_letta_process(process) {
-            continue;
-        }
-        if agent == Agent::Jcode && !is_interactive_jcode_process(process) {
             continue;
         }
         let score = process_priority(process, &candidate);
@@ -354,7 +343,6 @@ pub(crate) fn session_identity_only_integration(source: &str, agent_label: &str)
     matches!(
         (source, agent_label),
         ("herdr:hermes", "hermes")
-            | ("herdr:jcode", "jcode")
             | ("herdr:qwen", "qwen")
             | ("herdr:letta", "letta")
             | ("herdr:antigravity_cli", "agy")
@@ -542,7 +530,7 @@ fn windows_cmd_arg_agent_name(argv: &[String]) -> Option<String> {
             "/c" | "/k" => {
                 return args
                     .next()
-                    .and_then(|command| command_text_agent_name(command));
+                    .and_then(|command| command_text_agent_name(command))
             }
             "/d" | "/s" | "/q" | "/a" | "/u" | "/e:on" | "/e:off" | "/f:on" | "/f:off"
             | "/v:on" | "/v:off" => continue,
@@ -871,52 +859,6 @@ fn is_interactive_letta_process(process: &crate::platform::ForegroundProcess) ->
     letta_first_arg_after_backend_selection(cli_args).is_none_or(|arg| arg.starts_with('-'))
 }
 
-fn is_interactive_jcode_process(process: &crate::platform::ForegroundProcess) -> bool {
-    if let Some(argv) = process.argv.as_deref() {
-        jcode_args_are_interactive(argv.iter().map(String::as_str).skip(1))
-    } else if let Some(cmdline) = process.cmdline.as_deref() {
-        jcode_args_are_interactive(cmdline.split_whitespace().skip(1))
-    } else {
-        true
-    }
-}
-
-fn jcode_args_are_interactive<'a>(mut args: impl Iterator<Item = &'a str>) -> bool {
-    while let Some(arg) = args.next() {
-        let arg = arg.trim_matches(['\'', '"']);
-        match arg {
-            "--help" | "-h" | "--version" | "-V" => return false,
-            "--provider"
-            | "-p"
-            | "--cwd"
-            | "-C"
-            | "--remote-working-dir"
-            | "--ssh"
-            | "--ssh-binary"
-            | "--ssh-server-socket"
-            | "--resume"
-            | "--socket"
-            | "--model"
-            | "-m"
-            | "--provider-profile"
-            | "--tool-profile"
-            | "--tools"
-            | "--disabled-tools"
-            | "--mcp-tools"
-            | "--mcp-tools-token-threshold" => {
-                let _ = args.next();
-            }
-            "ambient" => return args.next() == Some("run-visible"),
-            "connect" | "repl" | "permissions" => return true,
-            _ if arg.starts_with('-') => {}
-            // Headless run, shared daemon, SDK bridges and administrative CLIs
-            // must not become the pane owner while the interactive client exits.
-            _ => return false,
-        }
-    }
-    true
-}
-
 fn resolved_agent_name_from_path_token(token: &str) -> Option<String> {
     let path = std::path::Path::new(token);
     if path.components().count() < 2 {
@@ -1027,110 +969,6 @@ mod tests {
     // ---- Agent identification ----
 
     #[test]
-    fn jcode_background_daemons_and_headless_runs_do_not_own_panes() {
-        for args in [
-            vec!["jcode", "serve"],
-            vec!["jcode", "--provider", "claude", "serve"],
-            vec!["jcode", "server", "keepalive"],
-            vec!["jcode", "run", "--json", "do work"],
-            vec!["jcode", "acp"],
-            vec!["jcode", "--version"],
-        ] {
-            let job = crate::platform::ForegroundJob {
-                process_group_id: 40,
-                processes: vec![foreground_process(40, "jcode", &args)],
-            };
-            assert_eq!(identify_agent_in_job(&job), None, "{args:?}");
-        }
-        for args in [
-            vec!["jcode"],
-            vec!["jcode", "--resume", "session-1"],
-            vec!["jcode", "--provider", "claude", "connect"],
-            vec!["jcode", "permissions"],
-            vec!["jcode", "ambient", "run-visible"],
-        ] {
-            let job = crate::platform::ForegroundJob {
-                process_group_id: 40,
-                processes: vec![foreground_process(40, "jcode", &args)],
-            };
-            assert_eq!(
-                identify_agent_in_job(&job),
-                Some((Agent::Jcode, "jcode".into())),
-                "{args:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn jcode_process_identity_and_screen_lifecycle() {
-        assert_eq!(identify_agent("jcode"), Some(Agent::Jcode));
-        assert_eq!(
-            identify_agent("/home/user/.local/bin/jcode"),
-            Some(Agent::Jcode)
-        );
-        assert_eq!(identify_agent("JCODE.EXE"), Some(Agent::Jcode));
-        assert_eq!(identify_agent("jcode-helper"), None);
-        let job = crate::platform::ForegroundJob {
-            process_group_id: 40,
-            processes: vec![foreground_process(
-                40,
-                "jcode",
-                &["jcode", "--resume", "session-1"],
-            )],
-        };
-        assert_eq!(
-            identify_agent_in_job(&job),
-            Some((Agent::Jcode, "jcode".into()))
-        );
-        assert!(session_identity_only_integration("herdr:jcode", "jcode"));
-        assert!(!full_lifecycle_hook_authority("herdr:jcode", "jcode"));
-        for (screen, state) in [
-            ("1> ", AgentState::Idle),
-            ("12» review this patch", AgentState::Idle),
-            ("⠋ thinking… 3s\n2… ", AgentState::Working),
-            ("⠋ running bash · 3s\n2… follow up", AgentState::Working),
-            (
-                "↻ network disconnected, waiting to retry · provider · 3s\n2… ",
-                AgentState::Working,
-            ),
-            ("Error: request failed\n2> ", AgentState::Idle),
-            ("Interrupted\n2> ", AgentState::Idle),
-            ("Press Ctrl+C again to quit\n2> ", AgentState::Idle),
-            ("Which deployment should I use?\n2> ", AgentState::Idle),
-            (
-                "╭ Permissions (1 pending) ─────────╮\n│ ⏳ Agent is waiting for this decision │\n│ a  approve    d  deny    q  quit │\n╰──────────────────────────────╯",
-                AgentState::Blocked,
-            ),
-            (
-                "╭ Permissions (2 pending) ─────────╮\n│ a  approve    d  deny    q  quit │\n╰──────────────────────────────╯",
-                AgentState::Blocked,
-            ),
-            (
-                "╭ Permissions (1 pending) ─────────╮\n│ Deny reason: do not deploy▌ │\n│ Enter  confirm deny    Esc  cancel │\n╰──────────────────────────────╯",
-                AgentState::Blocked,
-            ),
-            (
-                "╭ Permissions ─────────╮\n│ No pending permission requests. │\n╰──────────────────────╯\n2> ",
-                AgentState::Idle,
-            ),
-            (
-                "↑↓ choose · Enter select · Esc cancel\n2> ",
-                AgentState::Blocked,
-            ),
-        ] {
-            assert_eq!(detect_state(Some(Agent::Jcode), screen), state, "{screen}");
-        }
-        assert_eq!(
-            detect_state(
-                Some(Agent::Jcode),
-                "The answer mentions thinking and Permissions (1 pending).\n2> "
-            ),
-            AgentState::Idle
-        );
-        assert_eq!(detect_state(None, "1> "), AgentState::Unknown);
-    }
-
-    #[test]
     fn identify_known_agents() {
         assert_eq!(identify_agent("pi"), Some(Agent::Pi));
         assert_eq!(identify_agent("claude"), Some(Agent::Claude));
@@ -1239,7 +1077,6 @@ mod tests {
             (Agent::Antigravity, "agy"),
             (Agent::Cline, "cline"),
             (Agent::Omp, "omp"),
-            (Agent::Jcode, "jcode"),
             (Agent::Mastracode, "mastracode"),
             (Agent::OpenCode, "opencode"),
             (Agent::GithubCopilot, "copilot"),

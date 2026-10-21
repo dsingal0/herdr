@@ -333,12 +333,10 @@ fn older_cached_remote_manifest_does_not_shadow_newer_bundled_manifest() {
             explain.cached_remote_version.as_deref(),
             Some("2026.06.10.0")
         );
-        assert!(
-            explain
-                .warning
-                .as_deref()
-                .is_some_and(|warning| warning.contains("older than bundled"))
-        );
+        assert!(explain
+            .warning
+            .as_deref()
+            .is_some_and(|warning| warning.contains("older than bundled")));
     });
 }
 
@@ -680,70 +678,6 @@ fn screen_regions_extract_structure_without_classifying_agent_state() {
 }
 
 #[test]
-fn jcode_real_prompt_glyphs_and_live_status_override_transcript_prompts() {
-    with_manifest_dirs("jcode-live-chrome", || {
-        // › is the actual PTY transcript prompt; >, », and $ come from
-        // ui_input::input_prompt for ordinary, skill, and shell composition.
-        for screen in [
-            "1› render a fixture response",
-            "1› render a fixture response\nFixture response\n2> ",
-            "1› render a fixture response\nFixture response\n2» ",
-            "1› render a fixture response\nFixture response\n2$ ",
-        ] {
-            let result = explain(Agent::Jcode, screen);
-            assert_eq!(result.state, AgentState::Idle, "{screen}");
-            assert!(result.visible_idle, "{screen}");
-            assert_eq!(result.matched_rule.unwrap().id, "idle_composer");
-        }
-
-        // draw_status emits sending/thinking/connection labels, but streaming
-        // emits just elapsed time (optionally preceded by a quiet-stream label).
-        for status in [
-            "⠋ sending… 0s",
-            "⠙ thinking… 1s",
-            "⠹ sending context… 2s",
-            "⠸ waiting for response… 3s",
-            "⠼ retrying 1/3… 4s",
-            "⠴ running bash",
-            "⠋ 4.2s",
-            "⠙ (no tokens 3s) · 4.2s",
-            "⠹ (stalled 12s) · 12.0s",
-        ] {
-            let screen = format!("1› render a fixture response\n{status}");
-            let result = explain(Agent::Jcode, &screen);
-            assert_eq!(result.state, AgentState::Working, "{screen}");
-            assert!(result.visible_working, "{screen}");
-            assert_eq!(result.matched_rule.unwrap().id, "activity_status");
-        }
-        let queued = explain(
-            Agent::Jcode,
-            "1› render a fixture response\n2… queued input",
-        );
-        assert_eq!(queued.state, AgentState::Working);
-        assert_eq!(queued.matched_rule.unwrap().id, "processing_composer");
-
-        // These are the exact ui_inline_interactive navigation labels.
-        for footer in [
-            "↑↓ choose · Enter select · Esc cancel",
-            "↑↓ route · ←→ column · Enter select · Esc cancel",
-        ] {
-            let screen = format!("1› choose a route\n⠋ sending… 0s\n{footer}");
-            let result = explain(Agent::Jcode, &screen);
-            assert_eq!(result.state, AgentState::Blocked, "{screen}");
-            assert!(result.visible_blocker);
-            assert_eq!(result.matched_rule.unwrap().id, "interactive_selection");
-        }
-        let permission = explain(
-            Agent::Jcode,
-            "╭ Permissions (1 pending) ─╮\nAgent is waiting for this decision\n a approve d deny \n1› run the command",
-        );
-        assert_eq!(permission.state, AgentState::Blocked);
-        assert!(permission.visible_blocker);
-        assert_eq!(permission.matched_rule.unwrap().id, "pending_permission");
-    });
-}
-
-#[test]
 fn all_bundled_manifests_parse_and_validate() {
     for agent in Agent::SCREEN_MANIFEST_AGENTS {
         assert!(
@@ -756,9 +690,8 @@ fn all_bundled_manifests_parse_and_validate() {
 
 #[test]
 fn manifest_validation_rejects_unknown_fields_empty_rules_invalid_regions_and_regexes() {
-    assert!(
-        parse_manifest(
-            r#"
+    assert!(parse_manifest(
+        r#"
 id = "codex"
 
 [[rules]]
@@ -766,24 +699,20 @@ id = "typo"
 state = "working"
 contain = ["Working"]
 "#
-        )
-        .is_err()
-    );
-    assert!(
-        parse_manifest(
-            r#"
+    )
+    .is_err());
+    assert!(parse_manifest(
+        r#"
 id = "codex"
 
 [[rules]]
 id = "empty"
 state = "working"
 "#
-        )
-        .is_err()
-    );
-    assert!(
-        parse_manifest(
-            r#"
+    )
+    .is_err());
+    assert!(parse_manifest(
+        r#"
 id = "codex"
 
 [[rules]]
@@ -792,12 +721,10 @@ state = "working"
 region = "after_last_promt_marker"
 contains = ["Working"]
 "#
-        )
-        .is_err()
-    );
-    assert!(
-        parse_manifest(
-            r#"
+    )
+    .is_err());
+    assert!(parse_manifest(
+        r#"
 id = "codex"
 
 [[rules]]
@@ -805,12 +732,10 @@ id = "bad_regex"
 state = "working"
 regex = ["["]
 "#
-        )
-        .is_err()
-    );
-    assert!(
-        parse_manifest(
-            r#"
+    )
+    .is_err());
+    assert!(parse_manifest(
+        r#"
 id = "codex"
 
 [[rules]]
@@ -818,16 +743,14 @@ id = "bad_nested_regex"
 state = "working"
 any = [{ line_regex = ["["] }]
 "#
-        )
-        .is_err()
-    );
+    )
+    .is_err());
 }
 
 #[test]
 fn manifest_validation_keeps_skip_rules_neutral() {
-    assert!(
-        parse_manifest(
-            r#"
+    assert!(parse_manifest(
+        r#"
 id = "codex"
 
 [[rules]]
@@ -836,12 +759,10 @@ state = "idle"
 skip_state_update = true
 contains = ["menu"]
 "#
-        )
-        .is_err()
-    );
-    assert!(
-        parse_manifest(
-            r#"
+    )
+    .is_err());
+    assert!(parse_manifest(
+        r#"
 id = "codex"
 
 [[rules]]
@@ -851,9 +772,8 @@ skip_state_update = true
 visible_blocker = true
 contains = ["menu"]
 "#
-        )
-        .is_err()
-    );
+    )
+    .is_err());
 }
 
 #[test]

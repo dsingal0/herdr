@@ -12,7 +12,6 @@ Open settings inside Herdr and use the integrations tab to install recommended i
 ```bash
 herdr integration install pi
 herdr integration install omp
-herdr integration install jcode
 herdr integration install claude
 herdr integration install codex
 herdr integration install copilot
@@ -36,7 +35,6 @@ herdr integration install grok
 ```bash
 herdr integration uninstall pi
 herdr integration uninstall omp
-herdr integration uninstall jcode
 herdr integration uninstall claude
 herdr integration uninstall codex
 herdr integration uninstall copilot
@@ -102,29 +100,6 @@ Herdr writes the bundled extension to:
 Herdr uses `PI_CODING_AGENT_DIR` as the complete agent directory when set. Otherwise, it uses `$HOME/$PI_CONFIG_DIR/agent` when `PI_CONFIG_DIR` is set, falling back to `~/.omp/agent`. If Pi and OMP resolve to the same extension directory, Herdr refuses the OMP install so the OMP extension cannot be loaded by Pi. Configure separate agent directories before installing both integrations. Herdr creates the extensions directory when the resolved OMP agent directory already exists. Uninstall removes only that extension file.
 
 The OMP integration reports `omp` as the agent label, lifecycle state, and native session identity through Herdr's socket API. It does not require native process detection for the `omp` executable, and Herdr can resume an OMP pane with `omp --resume=<session>` after a server restart.
-
-## Jcode
-
-Run `herdr integration install jcode` to enable Jcode's native session reporter.
-Herdr writes only `$JCODE_HOME/herdr.json`, defaulting to `~/.jcode/herdr.json`:
-
-```json
-{"HERDR_INTEGRATION_ID":"jcode","HERDR_INTEGRATION_VERSION":1,"enabled":true}
-```
-
-User `config.toml` and hooks are never modified. Uninstall removes only a marker
-owned by this integration; invalid or unrelated files are preserved with an error.
-The native reporter is off without the marker. `JCODE_HERDR_ENABLED=1` or `0`
-overrides marker enablement. A Jcode build with native Herdr support is required.
-
-Jcode reports official source `herdr:jcode` through `pane.report_agent_session`.
-It reports identity only: live screen detection determines working, blocked, and
-idle state. Restoring a saved session runs `jcode --resume <id>`. `startup` and
-`select` session reports replace the current session only with fresh foreground
-process evidence; stale reports cannot take over a different agent's pane.
-
-`herdr integration status` runs without starting a server. A `jcode:` line
-identifies a Herdr binary with this target; older upstream binaries lack it.
 
 ## Claude Code
 

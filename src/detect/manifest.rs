@@ -7,8 +7,8 @@ use regex::Regex;
 use serde::Deserialize;
 
 use super::{
-    Agent, AgentDetection, AgentState, agent_label, manifest_update::ManifestVersion,
-    parse_agent_label,
+    agent_label, manifest_update::ManifestVersion, parse_agent_label, Agent, AgentDetection,
+    AgentState,
 };
 
 pub const DEFAULT_KNOWN_AGENT_IDLE_FALLBACK: &str = "default_known_agent_idle_fallback";
@@ -249,7 +249,6 @@ const BUNDLED_MANIFESTS: &[(&str, &str)] = &[
     ("gemini", include_str!("manifests/gemini.toml")),
     ("grok", include_str!("manifests/grok.toml")),
     ("hermes", include_str!("manifests/hermes.toml")),
-    ("jcode", include_str!("manifests/jcode.toml")),
     ("kilo", include_str!("manifests/kilo.toml")),
     ("kimi", include_str!("manifests/kimi.toml")),
     ("kiro", include_str!("manifests/kiro.toml")),

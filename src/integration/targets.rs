@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 
 use super::claude_settings::{
     install as install_claude_settings, uninstall as uninstall_claude_settings,
@@ -104,50 +104,6 @@ pub(crate) fn install_omp() -> io::Result<OmpInstallPaths> {
         extension_path,
         removed_legacy_pi_extension,
     })
-}
-
-// Jcode emits session identity natively. Never edit its user config or hooks.
-pub(crate) fn install_jcode() -> io::Result<PathBuf> {
-    let dir = super::env::jcode_dir()?;
-    check_config_targets(&dir, &[super::JCODE_MARKER_INSTALL_NAME])?;
-    let path = dir.join(super::JCODE_MARKER_INSTALL_NAME);
-    check_jcode_marker_owner(&path)?;
-    fs::create_dir_all(&dir)?;
-    write_config(
-        &path,
-        serde_json::to_vec_pretty(&json!({
-            "HERDR_INTEGRATION_ID": "jcode",
-            "HERDR_INTEGRATION_VERSION": super::JCODE_INTEGRATION_VERSION,
-            "enabled": true,
-        }))?,
-    )?;
-    Ok(path)
-}
-
-fn check_jcode_marker_owner(path: &Path) -> io::Result<()> {
-    match fs::read_to_string(path) {
-        Ok(content) => {
-            let marker: Value = serde_json::from_str(&content).map_err(io::Error::other)?;
-            if marker["HERDR_INTEGRATION_ID"] != "jcode" {
-                return Err(io::Error::other(format!(
-                    "refusing to change non-Herdr jcode marker at {}",
-                    path.display()
-                )));
-            }
-            Ok(())
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error),
-    }
-}
-
-pub(crate) fn uninstall_jcode() -> io::Result<(PathBuf, bool)> {
-    let dir = super::env::jcode_dir()?;
-    check_config_targets(&dir, &[super::JCODE_MARKER_INSTALL_NAME])?;
-    let path = dir.join(super::JCODE_MARKER_INSTALL_NAME);
-    check_jcode_marker_owner(&path)?;
-    let removed = remove_file_if_exists(&path)?;
-    Ok((path, removed))
 }
 
 pub(crate) fn remove_legacy_pi_extension_from_omp_dir(dir: &Path) -> io::Result<bool> {
