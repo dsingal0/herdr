@@ -55,6 +55,10 @@ pub(crate) fn omp_extension_dir() -> io::Result<PathBuf> {
         .join("extensions"))
 }
 
+pub(crate) fn jcode_dir() -> io::Result<PathBuf> {
+    config_dir_from_env_or_home("JCODE_HOME", &[".jcode"])
+}
+
 pub(crate) fn claude_dir() -> io::Result<PathBuf> {
     config_dir_from_env_or_home(CLAUDE_CONFIG_DIR_ENV_VAR, &[".claude"])
 }
@@ -264,6 +268,23 @@ pub(crate) fn integration_env_lock() -> IntegrationEnvLock {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn jcode_home_is_separate_from_user_config_and_xdg() {
+        let _lock = integration_env_lock();
+        let original = std::env::var_os("JCODE_HOME");
+        std::env::remove_var("JCODE_HOME");
+        let home = home_dir().unwrap();
+        assert_eq!(jcode_dir().unwrap(), home.join(".jcode"));
+        std::env::set_var("JCODE_HOME", home.join("custom-jcode"));
+        assert_eq!(jcode_dir().unwrap(), home.join("custom-jcode"));
+        std::env::set_var("JCODE_HOME", "");
+        assert_eq!(jcode_dir().unwrap(), home.join(".jcode"));
+        match original {
+            Some(value) => std::env::set_var("JCODE_HOME", value),
+            None => std::env::remove_var("JCODE_HOME"),
+        }
+    }
 
     #[test]
     fn opencode_state_dir_defaults_to_local_state() {

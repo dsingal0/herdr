@@ -147,13 +147,13 @@ fn parse_integration_target(
 ) -> std::io::Result<Option<IntegrationCommandTarget>> {
     let Some(target) = args.first().map(|arg| arg.as_str()) else {
         eprintln!(
-            "usage: herdr integration {action} <pi|omp|claude|codex|copilot|devin|droid|kimi|opencode|kilo|hermes|qodercli|qwen|letta|cursor|mastracode|grok>"
+            "usage: herdr integration {action} <pi|omp|jcode|claude|codex|copilot|devin|droid|kimi|opencode|kilo|hermes|qodercli|qwen|letta|cursor|mastracode|grok>"
         );
         return Ok(None);
     };
     if args.len() != 1 {
         eprintln!(
-            "usage: herdr integration {action} <pi|omp|claude|codex|copilot|devin|droid|kimi|opencode|kilo|hermes|qodercli|qwen|letta|cursor|mastracode|grok>"
+            "usage: herdr integration {action} <pi|omp|jcode|claude|codex|copilot|devin|droid|kimi|opencode|kilo|hermes|qodercli|qwen|letta|cursor|mastracode|grok>"
         );
         return Ok(None);
     }
@@ -161,6 +161,7 @@ fn parse_integration_target(
     let parsed = match target {
         "pi" => IntegrationCommandTarget::Builtin(IntegrationTarget::Pi),
         "omp" => IntegrationCommandTarget::Builtin(IntegrationTarget::Omp),
+        "jcode" => IntegrationCommandTarget::Builtin(IntegrationTarget::Jcode),
         "claude" => IntegrationCommandTarget::Builtin(IntegrationTarget::Claude),
         "codex" => IntegrationCommandTarget::Builtin(IntegrationTarget::Codex),
         "copilot" => IntegrationCommandTarget::Builtin(IntegrationTarget::Copilot),
@@ -182,7 +183,7 @@ fn parse_integration_target(
         _ => {
             eprintln!("unknown integration target: {target}");
             eprintln!(
-                "currently supported: pi, omp, claude, codex, copilot, devin, droid, kimi, opencode, kilo, hermes, qodercli, qwen, letta, cursor, mastracode, antigravity-cli, grok"
+                "currently supported: pi, omp, jcode, claude, codex, copilot, devin, droid, kimi, opencode, kilo, hermes, qodercli, qwen, letta, cursor, mastracode, antigravity-cli, grok"
             );
             return Ok(None);
         }
@@ -209,6 +210,7 @@ fn print_integration_help() {
     eprintln!("  herdr integration install letta");
     eprintln!("  herdr integration install cursor");
     eprintln!("  herdr integration install mastracode");
+    eprintln!("  herdr integration install jcode");
     eprintln!("  herdr integration install antigravity-cli");
     eprintln!("  herdr integration install grok");
     eprintln!("  herdr integration uninstall pi");
@@ -227,7 +229,31 @@ fn print_integration_help() {
     eprintln!("  herdr integration uninstall letta");
     eprintln!("  herdr integration uninstall cursor");
     eprintln!("  herdr integration uninstall mastracode");
+    eprintln!("  herdr integration uninstall jcode");
     eprintln!("  herdr integration uninstall antigravity-cli");
     eprintln!("  herdr integration uninstall grok");
     eprintln!("  herdr integration status [--outdated-only]");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn jcode_is_a_builtin_install_and_uninstall_target() {
+        for action in ["install", "uninstall"] {
+            assert!(matches!(
+                parse_integration_target(&["jcode".into()], action).unwrap(),
+                Some(IntegrationCommandTarget::Builtin(IntegrationTarget::Jcode))
+            ));
+        }
+        assert_eq!(
+            serde_json::to_string(&IntegrationTarget::Jcode).unwrap(),
+            "\"jcode\""
+        );
+        assert_eq!(
+            serde_json::from_str::<IntegrationTarget>("\"jcode\"").unwrap(),
+            IntegrationTarget::Jcode
+        );
+    }
 }

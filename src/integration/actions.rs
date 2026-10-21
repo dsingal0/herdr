@@ -93,6 +93,13 @@ fn install_target_inner(target: crate::api::schema::IntegrationTarget) -> io::Re
             let path = install_pi()?;
             vec![format!("installed pi integration to {}", path.display())]
         }
+        crate::api::schema::IntegrationTarget::Jcode => {
+            let path = super::targets::install_jcode()?;
+            vec![format!(
+                "enabled native jcode session integration at {}",
+                path.display()
+            )]
+        }
         crate::api::schema::IntegrationTarget::Omp => {
             let installed = install_omp()?;
             let mut messages = Vec::new();
@@ -340,6 +347,14 @@ pub(crate) fn uninstall_target(
                     result.extension_path.display()
                 )]
             }
+        }
+        crate::api::schema::IntegrationTarget::Jcode => {
+            let (path, removed) = super::targets::uninstall_jcode()?;
+            vec![format!(
+                "{} native jcode integration marker at {}",
+                if removed { "removed" } else { "no Herdr-owned" },
+                path.display()
+            )]
         }
         crate::api::schema::IntegrationTarget::Omp => {
             let result = uninstall_omp()?;

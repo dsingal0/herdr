@@ -13,7 +13,131 @@ use super::*;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
+
+struct JcodeHomeFixture {
+    path: PathBuf,
+    original: Option<std::ffi::OsString>,
+}
+
+impl JcodeHomeFixture {
+    fn new() -> Self {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            ".herdr-jcode-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&path).unwrap();
+        let original = std::env::var_os("JCODE_HOME");
+        std::env::set_var("JCODE_HOME", &path);
+        Self { path, original }
+    }
+}
+
+impl Drop for JcodeHomeFixture {
+    fn drop(&mut self) {
+        match self.original.take() {
+            Some(value) => std::env::set_var("JCODE_HOME", value),
+            None => std::env::remove_var("JCODE_HOME"),
+        }
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+#[test]
+fn jcode_native_marker_preserves_user_config_and_hooks() {
+    let _lock = integration_env_lock();
+    let fixture = JcodeHomeFixture::new();
+    let base = &fixture.path;
+    let config = b"[hooks]\non_start = 'echo user hook'\n";
+    let hooks = b"{\"hooks\":[\"keep user hook\"]}\n";
+    fs::write(base.join("config.toml"), config).unwrap();
+    fs::write(base.join("hooks.json"), hooks).unwrap();
+
+    let target = crate::api::schema::IntegrationTarget::Jcode;
+    assert!(integration_target_supported(target));
+    assert_eq!(integration_target_label(target), "jcode");
+    assert_eq!(integration_target_command_names(target), &["jcode"]);
+    assert!(crate::api::schema::IntegrationTarget::ALL.contains(&target));
+    let path = base.join("herdr.json");
+    assert_eq!(
+        integration_status_at(target, path.clone(), 1).state,
+        IntegrationStatusKind::NotInstalled
+    );
+    super::install_target(target).unwrap();
+    let marker: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        marker,
+        json!({"HERDR_INTEGRATION_ID":"jcode", "HERDR_INTEGRATION_VERSION":1, "enabled":true})
+    );
+    let status = integration_status_at(target, path.clone(), 1);
+    assert_eq!(status.state, IntegrationStatusKind::Current);
+    assert_eq!(status.installed_version, Some(1));
+    assert!(
+        integration_recommendations()
+            .iter()
+            .any(|info| info.target == target
+                && info.label == "jcode"
+                && info.state == IntegrationStatusKind::Current)
+    );
+    super::install_target(target).unwrap();
+    fs::write(
+        &path,
+        r#"{"HERDR_INTEGRATION_ID":"jcode","HERDR_INTEGRATION_VERSION":1,"enabled":false}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        integration_status_at(target, path.clone(), 1).state,
+        IntegrationStatusKind::Outdated
+    );
+    super::uninstall_target(target).unwrap();
+    super::uninstall_target(target).unwrap();
+    assert!(!path.exists());
+    assert_eq!(
+        fs::read(base.join("config.toml")).unwrap().as_slice(),
+        config.as_slice()
+    );
+    assert_eq!(
+        fs::read(base.join("hooks.json")).unwrap().as_slice(),
+        hooks.as_slice()
+    );
+}
+
+#[test]
+fn jcode_marker_rejects_unowned_and_malformed_files() {
+    let _lock = integration_env_lock();
+    let fixture = JcodeHomeFixture::new();
+    let base = &fixture.path;
+    let path = base.join("herdr.json");
+    for content in [r#"{"enabled":true,"user":"keep"}"#, "not json"] {
+        fs::write(&path, content).unwrap();
+        assert!(install_jcode().is_err());
+        assert!(uninstall_jcode().is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), content);
+    }
+    fs::write(
+        &path,
+        r#"{"HERDR_INTEGRATION_ID":"jcode","HERDR_INTEGRATION_VERSION":0,"enabled":true}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        integration_status_at(
+            crate::api::schema::IntegrationTarget::Jcode,
+            path.clone(),
+            1
+        )
+        .state,
+        IntegrationStatusKind::Outdated
+    );
+    install_jcode().unwrap();
+    assert_eq!(
+        integration_status_at(crate::api::schema::IntegrationTarget::Jcode, path, 1).state,
+        IntegrationStatusKind::Current
+    );
+}
 
 #[test]
 fn windows_powershell_encoded_hook_command_preserves_script_invocation() {
@@ -129,6 +253,7 @@ fn enforce_agent_version_accepts_current_version() {
 }
 
 fn clear_integration_path_env() {
+    std::env::remove_var("JCODE_HOME");
     std::env::remove_var(PI_CODING_AGENT_DIR_ENV_VAR);
     std::env::remove_var(OMP_CONFIG_DIR_ENV_VAR);
     std::env::remove_var(CLAUDE_CONFIG_DIR_ENV_VAR);
@@ -963,10 +1088,12 @@ fn install_claude_writes_hook_and_updates_settings() {
         settings["hooks"]["SessionStart"][0]["matcher"],
         "^(startup|resume|clear|compact|fork)$"
     );
-    assert!(settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains(" session"));
+    assert!(
+        settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap()
+            .contains(" session")
+    );
     assert!(settings["hooks"].get("UserPromptSubmit").is_none());
     assert!(settings["hooks"].get("PreToolUse").is_none());
     assert!(settings["hooks"].get("PermissionRequest").is_none());
@@ -1457,10 +1584,12 @@ fn install_codex_writes_hook_and_updates_hooks_and_config() {
     assert_eq!(installed.hooks_path, codex_dir.join("hooks.json"));
     assert_eq!(installed.config_path, codex_dir.join("config.toml"));
     assert_eq!(hook_content, CODEX_HOOK_ASSET);
-    assert!(hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains(" session"));
+    assert!(
+        hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap()
+            .contains(" session")
+    );
     assert!(hooks["hooks"].get("UserPromptSubmit").is_none());
     assert!(hooks["hooks"].get("PreToolUse").is_none());
     assert!(hooks["hooks"].get("PermissionRequest").is_none());
@@ -1871,10 +2000,12 @@ fn install_copilot_writes_hook_and_updates_settings() {
     assert_eq!(settings["theme"], "dark");
     assert_eq!(settings["hooks"]["PreToolUse"].as_array().unwrap().len(), 1);
     assert_eq!(settings["hooks"]["PreToolUse"][0]["command"], "echo keep");
-    assert!(settings["hooks"]["SessionStart"][0][direct_command_field()]
-        .as_str()
-        .unwrap()
-        .contains(COPILOT_HOOK_INSTALL_NAME));
+    assert!(
+        settings["hooks"]["SessionStart"][0][direct_command_field()]
+            .as_str()
+            .unwrap()
+            .contains(COPILOT_HOOK_INSTALL_NAME)
+    );
     for event in COPILOT_REMOVED_LIFECYCLE_HOOK_EVENTS {
         if let Some(entries) = settings["hooks"].get(event) {
             assert!(
@@ -2298,13 +2429,17 @@ fn install_droid_writes_hook_to_settings_and_cleans_legacy_hooks_json() {
     assert!(installed.updated_legacy_hooks);
     assert_eq!(hook_content, DROID_HOOK_ASSET);
     assert_eq!(settings["theme"], "factory-dark");
-    assert!(settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .contains(DROID_HOOK_INSTALL_NAME));
-    assert!(settings["hooks"]["SessionStart"][0]
-        .get("matcher")
-        .is_none());
+    assert!(
+        settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap()
+            .contains(DROID_HOOK_INSTALL_NAME)
+    );
+    assert!(
+        settings["hooks"]["SessionStart"][0]
+            .get("matcher")
+            .is_none()
+    );
     for (event, action) in DROID_HOOK_EVENTS {
         let command = settings["hooks"][event][0]["hooks"][0]["command"]
             .as_str()
@@ -2578,10 +2713,12 @@ fn opencode_install_defers_v2_registration_while_migration_pending() {
 
     assert!(installed.cli_config_path.is_none());
     assert!(!opencode_dir.join("cli.json").exists());
-    assert!(opencode_dir
-        .join(OPENCODE_V2_TUI_PLUGIN_DIR)
-        .join("tui.js")
-        .is_file());
+    assert!(
+        opencode_dir
+            .join(OPENCODE_V2_TUI_PLUGIN_DIR)
+            .join("tui.js")
+            .is_file()
+    );
 
     std::env::remove_var("HOME");
     let _ = fs::remove_dir_all(base);
@@ -2677,10 +2814,12 @@ fn opencode_json_config_validation_precedes_asset_changes() {
     fs::write(&plugin, "previous integration").unwrap();
     let config = dir.join("tui.json");
     fs::write(&config, r#"{"plugin":{}}"#).unwrap();
-    assert!(install_opencode()
-        .unwrap_err()
-        .to_string()
-        .contains("plugin list"));
+    assert!(
+        install_opencode()
+            .unwrap_err()
+            .to_string()
+            .contains("plugin list")
+    );
     assert_eq!(fs::read_to_string(&plugin).unwrap(), "previous integration");
     let original = r#"{"plugin":["./herdr-tui-session.js"]}"#;
     fs::write(&config, original).unwrap();
@@ -2843,10 +2982,12 @@ fn install_opencode_invalid_tui_config_does_not_write_plugins() {
     let err = install_opencode().unwrap_err().to_string();
 
     assert!(err.contains("plugin list"));
-    assert!(!opencode_dir
-        .join("plugins")
-        .join(OPENCODE_PLUGIN_INSTALL_NAME)
-        .exists());
+    assert!(
+        !opencode_dir
+            .join("plugins")
+            .join(OPENCODE_PLUGIN_INSTALL_NAME)
+            .exists()
+    );
     assert!(!opencode_dir.join(OPENCODE_TUI_PLUGIN_INSTALL_NAME).exists());
 
     std::env::remove_var("HOME");
@@ -3119,7 +3260,12 @@ fn hermes_block_sequences_preserve_indentation_comments_and_siblings() {
             "plugins: # selected\n# keep comment\n{padding}- other-plugin\nmodel: example\n"
         );
         let installed = update_hermes_enabled_plugin(&input, true);
-        assert_eq!(installed, format!("plugins: # selected\n{padding}- herdr-agent-state\n# keep comment\n{padding}- other-plugin\nmodel: example\n"));
+        assert_eq!(
+            installed,
+            format!(
+                "plugins: # selected\n{padding}- herdr-agent-state\n# keep comment\n{padding}- other-plugin\nmodel: example\n"
+            )
+        );
         assert_eq!(update_hermes_enabled_plugin(&installed, true), installed);
         assert_eq!(update_hermes_enabled_plugin(&installed, false), input);
     }
@@ -3151,7 +3297,10 @@ fn hermes_sequence_membership_is_scoped_to_direct_enabled_items() {
 fn install_hermes_does_not_treat_disabled_as_a_flat_plugin_list() {
     let input = "plugins:\n    disabled:\n    - herdr-agent-state\nmodel: example\n";
     let installed = update_hermes_enabled_plugin(input, true);
-    assert_eq!(installed, "plugins:\n    enabled:\n      - herdr-agent-state\n    disabled:\n    - herdr-agent-state\nmodel: example\n");
+    assert_eq!(
+        installed,
+        "plugins:\n    enabled:\n      - herdr-agent-state\n    disabled:\n    - herdr-agent-state\nmodel: example\n"
+    );
     assert_eq!(update_hermes_enabled_plugin(&installed, true), installed);
     let uninstalled = update_hermes_enabled_plugin(&installed, false);
     assert_eq!(
@@ -3167,13 +3316,25 @@ fn install_hermes_does_not_treat_disabled_as_a_flat_plugin_list() {
 #[test]
 fn uninstall_hermes_keeps_empty_sequences_and_removes_duplicate_direct_items() {
     for (input, expected) in [
-        ("plugins:\n  enabled: # keep\n  - 'herdr-agent-state'\n  - herdr-agent-state # duplicate\n  disabled: []\n", "plugins:\n  enabled: [] # keep\n  disabled: []\n"),
-        ("plugins: # keep\n- herdr-agent-state\n", "plugins: [] # keep\n"),
-        ("plugins:\n    enabled: [herdr-agent-state, herdr-agent-state] # keep\n", "plugins:\n    enabled: [] # keep\n"),
+        (
+            "plugins:\n  enabled: # keep\n  - 'herdr-agent-state'\n  - herdr-agent-state # duplicate\n  disabled: []\n",
+            "plugins:\n  enabled: [] # keep\n  disabled: []\n",
+        ),
+        (
+            "plugins: # keep\n- herdr-agent-state\n",
+            "plugins: [] # keep\n",
+        ),
+        (
+            "plugins:\n    enabled: [herdr-agent-state, herdr-agent-state] # keep\n",
+            "plugins:\n    enabled: [] # keep\n",
+        ),
     ] {
         let uninstalled = update_hermes_enabled_plugin(input, false);
         assert_eq!(uninstalled, expected);
-        assert_eq!(update_hermes_enabled_plugin(&uninstalled, false), uninstalled);
+        assert_eq!(
+            update_hermes_enabled_plugin(&uninstalled, false),
+            uninstalled
+        );
     }
 }
 
@@ -3319,8 +3480,14 @@ fn hermes_does_not_match_scalar_prefixes_or_nested_continuations() {
 #[test]
 fn hermes_flow_sequence_edits_keep_following_comments() {
     for (input, expected) in [
-        ("plugins: [other] # selected\n# keep following comment\nmodel: example\n", "plugins: # selected\n  - herdr-agent-state\n  - other\n# keep following comment\nmodel: example\n"),
-        ("plugins:\n    enabled: [other] # selected\n    # keep following comment\n    disabled: []\n", "plugins:\n    enabled: # selected\n      - herdr-agent-state\n      - other\n    # keep following comment\n    disabled: []\n"),
+        (
+            "plugins: [other] # selected\n# keep following comment\nmodel: example\n",
+            "plugins: # selected\n  - herdr-agent-state\n  - other\n# keep following comment\nmodel: example\n",
+        ),
+        (
+            "plugins:\n    enabled: [other] # selected\n    # keep following comment\n    disabled: []\n",
+            "plugins:\n    enabled: # selected\n      - herdr-agent-state\n      - other\n    # keep following comment\n    disabled: []\n",
+        ),
     ] {
         assert_eq!(update_hermes_enabled_plugin(input, true), expected);
         assert_eq!(update_hermes_enabled_plugin(expected, true), expected);
@@ -3339,11 +3506,16 @@ fn hermes_install_and_uninstall_are_idempotent_with_indentless_config() {
 
     let installed = install_hermes().unwrap();
     let first = fs::read_to_string(&config_path).unwrap();
-    assert_eq!(first, "plugins:\n  enabled:\n  - herdr-agent-state\n  - example-plugin\n  disabled:\n  - other-plugin\n");
-    assert!(installed
-        .plugin_dir
-        .join(HERMES_PLUGIN_INIT_INSTALL_NAME)
-        .is_file());
+    assert_eq!(
+        first,
+        "plugins:\n  enabled:\n  - herdr-agent-state\n  - example-plugin\n  disabled:\n  - other-plugin\n"
+    );
+    assert!(
+        installed
+            .plugin_dir
+            .join(HERMES_PLUGIN_INIT_INSTALL_NAME)
+            .is_file()
+    );
     install_hermes().unwrap();
     assert_eq!(fs::read_to_string(&config_path).unwrap(), first);
 
@@ -4096,10 +4268,12 @@ fn install_and_uninstall_letta_preserve_unrelated_settings_and_hooks() {
     assert!(entries[1].get("matcher").is_none());
     assert_eq!(entries[1]["hooks"][0]["timeout"], LETTA_HOOK_TIMEOUT_MS);
     assert_eq!(entries[1]["hooks"][0]["quiet"], true);
-    assert!(entries[1]["hooks"][0]["command"]
-        .as_str()
-        .unwrap()
-        .ends_with("session"));
+    assert!(
+        entries[1]["hooks"][0]["command"]
+            .as_str()
+            .unwrap()
+            .ends_with("session")
+    );
     assert_eq!(settings["theme"], "dark");
 
     install_letta().unwrap();
@@ -4223,10 +4397,12 @@ fn install_letta_does_not_publish_hook_when_settings_are_invalid() {
     std::env::set_var("HOME", &home);
 
     assert!(install_letta().is_err());
-    assert!(!letta_dir
-        .join("hooks")
-        .join(LETTA_HOOK_INSTALL_NAME)
-        .exists());
+    assert!(
+        !letta_dir
+            .join("hooks")
+            .join(LETTA_HOOK_INSTALL_NAME)
+            .exists()
+    );
 
     if let Some(home) = previous_home {
         std::env::set_var("HOME", home);
@@ -4238,6 +4414,7 @@ fn install_letta_does_not_publish_hook_when_settings_are_invalid() {
 
 #[test]
 fn letta_staged_install_can_restore_the_prior_file() {
+    let _lock = integration_env_lock();
     let base = unique_base();
     fs::create_dir_all(&base).unwrap();
     let target = base.join("settings.json");
@@ -4653,11 +4830,13 @@ fn uninstall_mastracode_removes_herdr_hooks_and_preserves_others() {
     let result = uninstall_mastracode().unwrap();
     assert!(result.removed_hook_file);
     assert!(result.updated_hooks);
-    assert!(!base
-        .join(".mastracode")
-        .join("hooks")
-        .join(MASTRACODE_HOOK_INSTALL_NAME)
-        .is_file());
+    assert!(
+        !base
+            .join(".mastracode")
+            .join("hooks")
+            .join(MASTRACODE_HOOK_INSTALL_NAME)
+            .is_file()
+    );
 
     let hooks_file: Value =
         serde_json::from_str(&fs::read_to_string(&hooks_path).unwrap()).unwrap();
@@ -4958,10 +5137,12 @@ fn install_antigravity_cli_rewrites_stale_herdr_block() {
         .unwrap();
     assert_eq!(entries.len(), 1);
     assert!(entries[0].get("hooks").is_none());
-    assert!(entries[0]
-        .get("command")
-        .and_then(Value::as_str)
-        .is_some_and(|command| command != "stale" && command != "stale idle"));
+    assert!(
+        entries[0]
+            .get("command")
+            .and_then(Value::as_str)
+            .is_some_and(|command| command != "stale" && command != "stale idle")
+    );
 
     std::env::remove_var(ANTIGRAVITY_CLI_CONFIG_DIR_ENV_VAR);
     let _ = fs::remove_dir_all(base);

@@ -464,10 +464,12 @@ fn onboarding_completion_persists_and_opens_endpoint_integrations() {
         }))
     ));
     assert_eq!(failed_write.actions.len(), 1);
-    assert!(state
-        .config_diagnostic
-        .as_deref()
-        .is_some_and(|diagnostic| diagnostic.contains("failed to read config")));
+    assert!(
+        state
+            .config_diagnostic
+            .as_deref()
+            .is_some_and(|diagnostic| diagnostic.contains("failed to read config"))
+    );
     assert!(unreadable_path.is_dir());
     std::fs::remove_dir(&unreadable_path).expect("remove unreadable config path");
 
@@ -502,10 +504,12 @@ fn unavailable_integration_list_does_not_wedge_settings() {
             ..
         }))
     ));
-    assert!(state
-        .visible_endpoint_notice
-        .as_ref()
-        .is_some_and(|notice| notice.key.code == "integration.list"));
+    assert!(
+        state
+            .visible_endpoint_notice
+            .as_ref()
+            .is_some_and(|notice| notice.key.code == "integration.list")
+    );
     let _ = std::fs::remove_file(&state.config.local_config_path);
 }
 
@@ -654,9 +658,11 @@ fn live_client_config_keeps_sound_diagnostics() {
     config.ui.sound.path = Some(std::path::PathBuf::from("invalid.wav"));
 
     let diagnostics = shell_config.apply_live_config(&config, &[], &[]);
-    assert!(diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.contains("expected an mp3 file")));
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.contains("expected an mp3 file"))
+    );
 }
 
 #[test]
@@ -1230,6 +1236,13 @@ fn client_settings_preview_restore_and_endpoint_integrations_are_owned_by_overla
                             available: false,
                             state: crate::api::schema::IntegrationState::NotInstalled,
                         },
+                        crate::api::schema::IntegrationInfo {
+                            target: crate::api::schema::IntegrationTarget::Jcode,
+                            label: "jcode".into(),
+                            command: "jcode".into(),
+                            available: true,
+                            state: crate::api::schema::IntegrationState::Current,
+                        },
                     ],
                 }),
             )
@@ -1248,6 +1261,8 @@ fn client_settings_preview_restore_and_endpoint_integrations_are_owned_by_overla
         .join("\n");
     assert!(text.contains("update available"));
     assert!(text.contains("not found"));
+    assert!(text.contains("jcode"));
+    assert!(text.contains("installed"));
     assert!(!text.contains("pane labels"));
 
     let popup = state.hits.settings_popup;

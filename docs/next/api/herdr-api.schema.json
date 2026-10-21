@@ -2166,6 +2166,7 @@
           "enum": [
             "pi",
             "omp",
+            "jcode",
             "claude",
             "codex",
             "copilot",
@@ -7637,6 +7638,7 @@
           "enum": [
             "pi",
             "omp",
+            "jcode",
             "claude",
             "codex",
             "copilot",
